@@ -514,7 +514,7 @@ func (c *NfsClient) GetFileInfo(path string) (FileInfo, error) {
 
 	splits := splitPath(path)
 	var name string
-	if len(splits) == 1 {
+	if len(splits) <= 1 {
 		name = path
 	} else {
 		name = splits[len(splits)-1]
