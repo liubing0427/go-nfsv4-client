@@ -17,11 +17,14 @@ import (
 	. "github.com/liubing0427/go-nfsv4-client/internal"
 )
 
-const NfsReadBlockLen = 512 * 1024
+const (
+	NfsReadBlockLen = 512 * 1024
+	DefaultPort     = 2049
+)
 
 var standardNfsAttrs = Bitmap4{
 	1<<FATTR4_TYPE | 1<<FATTR4_SIZE,
-	1 << (FATTR4_TIME_MODIFY - 32),
+	1<<(FATTR4_SPACE_AVAIL-32) | 1<<(FATTR4_SPACE_TOTAL-32) | 1<<(FATTR4_TIME_MODIFY-32),
 }
 
 type NfsInterface interface {
@@ -63,17 +66,23 @@ type AuthParams struct {
 }
 
 type FileInfo struct {
-	Name  string
-	IsDir bool
-	Size  uint64
-	Mtime time.Time
+	Name       string
+	IsDir      bool
+	Size       uint64
+	SpaceAvail uint64
+	SpaceTotal uint64
+	Mtime      time.Time
 }
 
-// Create the NFS client with the specified parameters. The `server` string must include port.
+// Create the NFS client with the specified parameters.
 // The default NFS port is 2049. E.g.: "127.0.0.1:2049".
 // `auth` should contain a fairly unique MachineId to make sure clients can be distinguished.
 func NewNfsClient(ctx context.Context, server string, auth AuthParams) (*NfsClient, error) {
 	d := net.Dialer{}
+	// If the port is not specified, use the default one
+	if !strings.Contains(server, ":") {
+		server = fmt.Sprintf("%s:%d", server, DefaultPort)
+	}
 	conn, err := d.DialContext(ctx, "tcp", server)
 	if err != nil {
 		return nil, err
@@ -480,6 +489,16 @@ func (c *NfsClient) translateFileMeta(name string, attrs Fattr4) FileInfo {
 
 	if len(atm) > 0 && atm[0]&(1<<FATTR4_SIZE) != 0 {
 		res.Size = binary.BigEndian.Uint64(attrs.Attr_vals[curOff : curOff+8])
+		curOff += 8
+	}
+
+	if len(atm) > 1 && atm[1]&(1<<(FATTR4_SPACE_AVAIL-32)) != 0 {
+		res.SpaceAvail = binary.BigEndian.Uint64(attrs.Attr_vals[curOff : curOff+8])
+		curOff += 8
+	}
+
+	if len(atm) > 1 && atm[1]&(1<<(FATTR4_SPACE_TOTAL-32)) != 0 {
+		res.SpaceTotal = binary.BigEndian.Uint64(attrs.Attr_vals[curOff : curOff+8])
 		curOff += 8
 	}
 
